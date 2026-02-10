@@ -4,6 +4,16 @@
 const { useState } = React;
 
 function SalesOrderApp() {
+    // SÄLJARE - VÄLJ FÖRST!
+  const [saljare, setSaljare] = useState('');
+
+  // Trello Email-to-Board adresser per säljare
+  const saljareTrelloEmails = {
+    Kevin: 'abbegazie+wd6jqwrwe4r1agvxxlwu@boards.trello.com',
+    Kosrat: 'abbegazie+nunc3e4n6x2nbaabz5tg@boards.trello.com',
+    Adam: 'abbegazie+bbnklionfggdmxwg9bga@boards.trello.com'
+  };
+
   // Service selection
   const [services, setServices] = useState({
     telefoni: false,
@@ -104,6 +114,8 @@ function SalesOrderApp() {
   const validateForm = () => {
     const newErrors = {};
 
+    if (!saljare) newErrors.saljare = 'Du måste välja ditt namn först!';
+
     // Base validation
     if (!baseInfo.foretag) newErrors.foretag = 'Företagsnamn krävs';
     if (!baseInfo.organisationsnummer) newErrors.organisationsnummer = 'Org.nummer krävs';
@@ -135,6 +147,7 @@ function SalesOrderApp() {
       .join(', ');
 
     let body = `NY ORDER - ${baseInfo.foretag}\n`;
+    body += `Säljare: ${saljare}\n`;
     body += `Tjänster: ${selectedServices}\n\n`;
     body += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
@@ -257,7 +270,7 @@ function SalesOrderApp() {
 
   const handleSendOrder = () => {
     if (!validateForm()) {
-      alert('Vänligen fyll i alla obligatoriska fält');
+      alert('Vänligen fyll i alla obligatoriska fält(inklusive ditt namn!)');
       return;
     }
 
@@ -268,8 +281,14 @@ function SalesOrderApp() {
 
     const body = generateEmailBody();
 
-    const mailtoLink = `mailto:abbe@easypartner.se?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-    window.location.href = mailtoLink;
+    const trelloEmail = saljareTrelloEmails[saljare];
+    const mailtoLink =
+      `mailto:abbe@easypartner.se` +
+      `?cc=${encodeURIComponent(trelloEmail)}` +
+      `&subject=${encodeURIComponent(subject)}` +
+      `&body=${encodeURIComponent(body)}`;
+
+      window.location.href = mailtoLink;
   };
 
   // Helper functions for repeatable lists
@@ -544,6 +563,68 @@ function SalesOrderApp() {
       </div>
 
       <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '40px 24px' }}>
+
+        <div className="form-section">
+          <h2 style={{
+            fontSize: '20px',
+            fontWeight: '600',
+            marginBottom: '24px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px'
+          }}>
+            <span style={{
+              background: 'linear-gradient(135deg, #06b6d4, #0891b2)',
+              width: '32px',
+              height: '32px',
+              borderRadius: '8px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '18px'
+            }}>👤</span>
+            Vem skapar denna order?
+          </h2>
+
+          <select
+            className={`input-field ${errors.saljare ? 'error' : ''}`}
+            style={{ maxWidth: '400px', fontSize: '16px' }}
+            value={saljare}
+            onChange={(e) => setSaljare(e.target.value)}
+          >
+            <option value="">-- Välj ditt namn --</option>
+            <option value="Adam">Adam</option>
+            <option value="Kosrat">Kosrat</option>
+            <option value="Kevin">Kevin</option>
+            
+          </select>
+
+          {errors.saljare && <div className="error-text">{errors.saljare}</div>}
+
+          {saljare && (
+            <div style={{
+              marginTop: '16px',
+              padding: '16px',
+              background: 'rgba(34, 197, 94, 0.1)',
+              border: '1px solid rgba(34, 197, 94, 0.3)',
+              borderRadius: '8px',
+              color: '#86efac',
+              fontSize: '14px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}>
+              <span style={{ fontSize: '20px' }}>✅</span>
+              <div>
+                <div style={{ fontWeight: '600' }}>Trello-kort kommer skapas automatiskt!</div>
+                <div style={{ opacity: 0.8, marginTop: '4px' }}>
+                  När du skickar mejlet skapas ett kort på {saljare}s implementeringstavla
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Service Selection */}
         <div className="form-section">
           <h2 style={{
