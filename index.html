@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8" />
+  <title>EasyPartner – Säljintag</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- React via CDN -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+
+  <!-- Babel för att köra JSX direkt i browsern -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #f5f5f5;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Här mountas hela din app -->
+  <div id="root"></div>
+
+  <!-- Din JSX-fil -->
+  <script type="text/babel" src="./sales-order-app.jsx"></script>
+
+</body>
+</html>
