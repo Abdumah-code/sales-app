@@ -146,7 +146,26 @@ function SalesOrderApp() {
       .map(k => k.charAt(0).toUpperCase() + k.slice(1))
       .join(', ');
 
-    let body = `NY ORDER - ${baseInfo.foretag}\n`;
+    let body = `
+    📌 PRIO
+    PRIO: _
+
+    📌 Status
+    _
+
+    📅 Senaste åtgärd
+    _
+
+    📌 Nästa steg
+    _
+
+    🧾 Övrigt
+    _
+
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    NY ORDER - ${baseInfo.foretag}
+    `;
     body += `Säljare: ${saljare}\n`;
     body += `Tjänster: ${selectedServices}\n\n`;
     body += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
