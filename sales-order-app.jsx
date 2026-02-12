@@ -34,16 +34,22 @@ function SalesOrderApp() {
   });
 
   // Gemensam fri text för bindning/slutfaktura (istället för faktura-sektion)
-  const [bindningEkonomiText, setBindningEkonomiText] = useState('');
-
-  // Service-specific data
-
-  // TELEFONI: from -> to + fri text
-  const [telefoniData, setTelefoniData] = useState({
-    nuvarandeOperator: '',
-    nastaOperator: '',
+  const [ekonomiData, setEkonomiData] = useState({
+    slutfaktura: '',
+    fullmakt: '',
     ovrigt: ''
   });
+  // Service-specific data
+
+  // TELEFONI: Lista av operatörer (repeatable)
+  const [telefoniData, setTelefoniData] = useState([
+    {
+      nuvarandeOperator: '',
+      nastaOperator: '',
+      antalAbonnemang: '',
+      ovrigt: ''
+    }
+  ]);
 
   // VÄXEL: minimalt + fri text
   const [vaxelData, setVaxelData] = useState({
@@ -110,8 +116,10 @@ function SalesOrderApp() {
 
     // Service-specific minimal validation
     if (selectedService === 'telefoni') {
-      if (!telefoniData.nuvarandeOperator) newErrors.telefoni_nuvarande = 'Välj nuvarande operatör';
-      if (!telefoniData.nastaOperator) newErrors.telefoni_nasta = 'Välj nästa operatör';
+      telefoniData.forEach((t, i) => {
+        if (!t.nuvarandeOperator) newErrors[`telefoni_${i}_nuvarande`] = 'Välj nuvarande operatör';
+        if (!t.nastaOperator) newErrors[`telefoni_${i}_nasta`] = 'Välj nästa operatör';
+      });
     }
 
     setErrors(newErrors);
@@ -152,17 +160,27 @@ function SalesOrderApp() {
       body += `  E-post: ${k.epost}\n\n`;
     });
 
-    // BINDNING / SLUTFAKTURA (fri text)
-    body += `💰 BINDNING / SLUTFAKTURA (fri text)\n\n`;
-    body += `${bindningEkonomiText || '_'}\n\n`;
+    // EKONOMI & FULLMAKTER
+    body += `💰 EKONOMI & FULLMAKTER\n\n`;
+    body += `1️⃣ SLUTFAKTURA (hårdvara & abonnemang):\n${ekonomiData.slutfaktura || '_'}\n\n`;
+    body += `2️⃣ FULLMAKT (vilka?):\n${ekonomiData.fullmakt || '_'}\n\n`;
+    body += `3️⃣ ÖVRIGT (ekonomi):\n${ekonomiData.ovrigt || '_'}\n\n`;
 
     // SERVICEBLOCK
     if (selectedService === 'telefoni') {
       body += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
       body += `📞 TELEFONI\n\n`;
-      body += `Nuvarande operatör: ${telefoniData.nuvarandeOperator || '_'}\n`;
-      body += `Nästa operatör: ${telefoniData.nastaOperator || '_'}\n\n`;
-      body += `Övrigt (telefoni):\n${telefoniData.ovrigt || '_'}\n\n`;
+      
+      telefoniData.forEach((t, i) => {
+        body += `Operatör ${i + 1}:\n`;
+        body += `  Nuvarande: ${t.nuvarandeOperator || '_'}\n`;
+        body += `  Nästa: ${t.nastaOperator || '_'}\n`;
+        body += `  Antal abonnemang: ${t.antalAbonnemang || '_'}\n`;
+        if (t.ovrigt) {
+          body += `  Övrigt: ${t.ovrigt}\n`;
+        }
+        body += `\n`;
+      });
     }
 
     if (selectedService === 'vaxel') {
@@ -399,6 +417,21 @@ function SalesOrderApp() {
         }
         .error-text { color: #fca5a5; font-size: 13px; margin-top: 4px; }
         textarea.input-field { min-height: 110px; resize: vertical; }
+
+        textarea.input-field { min-height: 110px; resize: vertical; }
+
+        /* Calendar icon color - brand blue */
+        input[type="date"]::-webkit-calendar-picker-indicator {
+          filter: invert(64%) sepia(36%) saturate(1021%) hue-rotate(146deg) brightness(93%) contrast(87%);
+          cursor: pointer;
+          transition: filter 0.2s;
+          width: 20px;
+          height: 20px;
+        }
+
+        input[type="date"]::-webkit-calendar-picker-indicator:hover {
+          filter: invert(64%) sepia(36%) saturate(1021%) hue-rotate(146deg) brightness(110%) contrast(87%);
+        }
       `}</style>
 
       {/* Header */}
@@ -742,18 +775,18 @@ function SalesOrderApp() {
               ))}
             </div>
 
-            {/* Bindning/slutfaktura - fri text */}
+            {/* Ekonomi - 3 fält */}
             <div className="form-section">
               <h2 style={{
                 fontSize: '20px',
                 fontWeight: '600',
-                marginBottom: '12px',
+                marginBottom: '24px',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '12px'
               }}>
                 <span style={{
-                  background: 'linear-gradient(135deg, #55c7db 0%, #a39acb 100%)',
+                  background: 'linear-gradient(135deg, #55c7db, #a39acb)',
                   width: '32px',
                   height: '32px',
                   borderRadius: '8px',
@@ -762,74 +795,177 @@ function SalesOrderApp() {
                   justifyContent: 'center',
                   fontSize: '18px'
                 }}>4</span>
-                Bindning / Slutfaktura (fri text)
+                Ekonomi & Fullmakter
               </h2>
 
-              <div style={{ color: '#94a3b8', fontSize: '13px', marginBottom: '10px' }}>
-                Ex: “Kund har privata abonnemang 2 st… 15 st på företag… 8 mån bindning kvar… slutfaktura ca …”
-              </div>
+              <div style={{ display: 'grid', gap: '20px' }}>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
+                    1. Slutfaktura (hårdvara & abonnemang)
+                  </label>
+                  <div style={{ color: '#94a3b8', fontSize: '13px', marginBottom: '6px' }}>
+                    Ex: "Slutlösen 17187 kr efter 6 mån, hårdvara ligger hos Helin Shekhan Telenor privat..."
+                  </div>
+                  <textarea
+                    className="input-field"
+                    value={ekonomiData.slutfaktura}
+                    onChange={(e) => setEkonomiData({ ...ekonomiData, slutfaktura: e.target.value })}
+                    placeholder="Beskriv slutfaktura, bindningstid, hårdvara..."
+                    style={{ minHeight: '100px' }}
+                  />
+                </div>
 
-              <textarea
-                className="input-field"
-                value={bindningEkonomiText}
-                onChange={(e) => setBindningEkonomiText(e.target.value)}
-                placeholder="Skriv allt om bindning/slutfaktura här…"
-              />
+                <div>
+                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
+                    2. Fullmakt (vilka behöver vi fullmakt från?)
+                  </label>
+                  <div style={{ color: '#94a3b8', fontSize: '13px', marginBottom: '6px' }}>
+                    Ex: "1. Telenor privat - Helin Shekhan, 2. Telenor företag - Lana Shekhan..."
+                  </div>
+                  <textarea
+                    className="input-field"
+                    value={ekonomiData.fullmakt}
+                    onChange={(e) => setEkonomiData({ ...ekonomiData, fullmakt: e.target.value })}
+                    placeholder="Lista vilka fullmakter vi behöver (operatör + namn)..."
+                    style={{ minHeight: '100px' }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
+                    3. Övrigt (ekonomi)
+                  </label>
+                  <textarea
+                    className="input-field"
+                    value={ekonomiData.ovrigt}
+                    onChange={(e) => setEkonomiData({ ...ekonomiData, ovrigt: e.target.value })}
+                    placeholder="Annan ekonomisk info..."
+                    style={{ minHeight: '80px' }}
+                  />
+                </div>
+              </div>
             </div>
 
             {/* SERVICE: TELEFONI */}
             {selectedService === 'telefoni' && (
               <div className="form-section">
-                <h2 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <span style={{ fontSize: '24px' }}>📞</span>
-                  Telefoni
+                <h2 style={{
+                  fontSize: '20px',
+                  fontWeight: '600',
+                  marginBottom: '24px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between'
+                }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <span style={{ fontSize: '24px' }}>📞</span>
+                    Telefoni
+                  </span>
+                  <button
+                    className="btn btn-add"
+                    onClick={() => setTelefoniData([
+                      ...telefoniData,
+                      { nuvarandeOperator: '', nastaOperator: '', antalAbonnemang: '', ovrigt: '' }
+                    ])}
+                  >
+                    + Lägg till operatör
+                  </button>
                 </h2>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
-                      Nuvarande operatör *
-                    </label>
-                    <select
-                      className={`input-field ${errors.telefoni_nuvarande ? 'error' : ''}`}
-                      value={telefoniData.nuvarandeOperator}
-                      onChange={(e) => setTelefoniData({ ...telefoniData, nuvarandeOperator: e.target.value })}
-                    >
-                      {allOperatorOptions.map(op => (
-                        <option key={op} value={op}>{op || 'Välj…'}</option>
-                      ))}
-                    </select>
-                    {errors.telefoni_nuvarande && <div className="error-text">{errors.telefoni_nuvarande}</div>}
-                  </div>
+                {telefoniData.map((item, index) => (
+                  <div key={index} className="repeatable-item" style={{ marginBottom: '20px' }}>
+                    {telefoniData.length > 1 && (
+                      <button
+                        className="btn btn-secondary"
+                        style={{ position: 'absolute', top: '12px', right: '12px' }}
+                        onClick={() => setTelefoniData(telefoniData.filter((_, i) => i !== index))}
+                        title="Ta bort"
+                      >
+                        ×
+                      </button>
+                    )}
 
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
-                      Nästa operatör *
-                    </label>
-                    <select
-                      className={`input-field ${errors.telefoni_nasta ? 'error' : ''}`}
-                      value={telefoniData.nastaOperator}
-                      onChange={(e) => setTelefoniData({ ...telefoniData, nastaOperator: e.target.value })}
-                    >
-                      {bigFourOperators.map(op => (
-                        <option key={op} value={op}>{op || 'Välj…'}</option>
-                      ))}
-                    </select>
-                    {errors.telefoni_nasta && <div className="error-text">{errors.telefoni_nasta}</div>}
-                  </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
+                          Nuvarande operatör *
+                        </label>
+                        <select
+                          className={`input-field ${errors[`telefoni_${index}_nuvarande`] ? 'error' : ''}`}
+                          value={item.nuvarandeOperator}
+                          onChange={(e) => {
+                            const updated = [...telefoniData];
+                            updated[index] = { ...updated[index], nuvarandeOperator: e.target.value };
+                            setTelefoniData(updated);
+                          }}
+                        >
+                          {allOperatorOptions.map(op => (
+                            <option key={op} value={op}>{op || 'Välj…'}</option>
+                          ))}
+                        </select>
+                        {errors[`telefoni_${index}_nuvarande`] && (
+                          <div className="error-text">{errors[`telefoni_${index}_nuvarande`]}</div>
+                        )}
+                      </div>
 
-                  <div style={{ gridColumn: '1 / -1' }}>
-                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
-                      Övrigt (telefoni)
-                    </label>
-                    <textarea
-                      className="input-field"
-                      value={telefoniData.ovrigt}
-                      onChange={(e) => setTelefoniData({ ...telefoniData, ovrigt: e.target.value })}
-                      placeholder="Allt som inte passar i fälten. Ex: antal abonnemang, specialfall, etc."
-                    />
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
+                          Nästa operatör *
+                        </label>
+                        <select
+                          className={`input-field ${errors[`telefoni_${index}_nasta`] ? 'error' : ''}`}
+                          value={item.nastaOperator}
+                          onChange={(e) => {
+                            const updated = [...telefoniData];
+                            updated[index] = { ...updated[index], nastaOperator: e.target.value };
+                            setTelefoniData(updated);
+                          }}
+                        >
+                          {bigFourOperators.map(op => (
+                            <option key={op} value={op}>{op || 'Välj…'}</option>
+                          ))}
+                        </select>
+                        {errors[`telefoni_${index}_nasta`] && (
+                          <div className="error-text">{errors[`telefoni_${index}_nasta`]}</div>
+                        )}
+                      </div>
+
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
+                          Antal abonnemang
+                        </label>
+                        <input
+                          type="number"
+                          className="input-field"
+                          value={item.antalAbonnemang}
+                          onChange={(e) => {
+                            const updated = [...telefoniData];
+                            updated[index] = { ...updated[index], antalAbonnemang: e.target.value };
+                            setTelefoniData(updated);
+                          }}
+                          placeholder="Ex: 15"
+                        />
+                      </div>
+
+                      <div style={{ gridColumn: '1 / -1' }}>
+                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
+                          Övrigt (nummer, info, etc.)
+                        </label>
+                        <textarea
+                          className="input-field"
+                          value={item.ovrigt}
+                          onChange={(e) => {
+                            const updated = [...telefoniData];
+                            updated[index] = { ...updated[index], ovrigt: e.target.value };
+                            setTelefoniData(updated);
+                          }}
+                          placeholder="Ex: specifika nummer, extra info..."
+                          style={{ minHeight: '80px' }}
+                        />
+                      </div>
+                    </div>
                   </div>
-                </div>
+                ))}
               </div>
             )}
 
@@ -997,14 +1133,23 @@ function SalesOrderApp() {
               boxShadow: '0 -4px 24px rgba(0, 0, 0, 0.3), 0 0 40px rgba(85, 199, 219, 0.2)'
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <div style={{ fontSize: '18px', fontWeight: '600', marginBottom: '4px' }}>
-                    Redo att skicka order?
-                  </div>
-                  <div style={{ fontSize: '14px', color: '#94a3b8' }}>
-                    Mejl skickas till abbe@easypartner.se (+ Trello CC)
-                  </div>
+               <div>
+                <div style={{ fontSize: '18px', fontWeight: '600', marginBottom: '4px' }}>
+                  Redo att skicka order?
                 </div>
+                <div style={{ fontSize: '14px', color: '#94a3b8', marginBottom: '4px' }}>
+                  Mejl skickas till abbe@easypartner.se (+ Trello CC)
+                </div>
+                <div style={{ 
+                  fontSize: '13px', 
+                  color: '#fbbf24',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}>
+                  ⚠️ Kom ihåg: Ta bort din email-signatur innan du skickar!
+                </div>
+              </div>
 
                 <button
                   className="btn btn-primary"
