@@ -4,8 +4,17 @@
 const { useState } = React;
 
 function SalesOrderApp() {
-    // SÄLJARE - VÄLJ FÖRST!
+  // SÄLJARE - VÄLJ FÖRST!
   const [saljare, setSaljare] = useState('');
+
+  // Trello “snabba frågor”
+  const [trelloMeta, setTrelloMeta] = useState({
+    prio: '',
+    status: '',
+    driftStart: '', // YYYY-MM-DD
+    nastaSteg: '',
+    ovrigt: ''
+  });
 
   // Trello Email-to-Board adresser per säljare
   const saljareTrelloEmails = {
@@ -14,112 +23,84 @@ function SalesOrderApp() {
     Adam: 'abbegazie+bbnklionfggdmxwg9bga@boards.trello.com'
   };
 
-  // Service selection
-  const [services, setServices] = useState({
-    telefoni: false,
-    vaxel: false,
-    kassa: false,
-    korjournal: false
-  });
+  // Service selection (EN tjänst i taget)
+  const [selectedService, setSelectedService] = useState('');
 
-  // Base info (always required)
+  // Base info (alltid)
   const [baseInfo, setBaseInfo] = useState({
-    // Kund & Bolag
     foretag: '',
     organisationsnummer: '',
-    besoksadress: '',
-    postnummer: '',
-    postort: '',
-    antalAnstallda: '',
-    antalArbetsplatser: '',
-
-    // Kontaktpersoner (repeatable)
-    kontakter: [{ namn: '', roll: '', telefon: '', epost: '' }],
-
-    // Fakturering
-    fakturaadress: '',
-    fakturaEpost: '',
-    betalningsvillkor: '30',
-    referens: '',
-    bindningstid: ''
+    kontakter: [{ namn: '', roll: '', telefon: '', epost: '' }]
   });
+
+  // Gemensam fri text för bindning/slutfaktura (istället för faktura-sektion)
+  const [bindningEkonomiText, setBindningEkonomiText] = useState('');
 
   // Service-specific data
+
+  // TELEFONI: from -> to + fri text
   const [telefoniData, setTelefoniData] = useState({
-    nummer: [{
-      nuvarandeNummer: '',
-      typ: 'portering',
-      operator: '',
-      simTyp: '',
-      portDatum: '',
-      avtalSlut: '',
-      aktivDatum: '',
-      anvandarnamn: ''
-    }]
+    nuvarandeOperator: '',
+    nastaOperator: '',
+    ovrigt: ''
   });
 
+  // VÄXEL: minimalt + fri text
   const [vaxelData, setVaxelData] = useState({
-    huvudnummerBefintligt: 'nej',
+    nuvarandeLosning: '',
+    nastaLosning: '',
     huvudnummer: '',
-    portDatum: '',
     oppettider: '',
-    koppling: '',
-    stangdHanvisning: '',
-    anvandare: [{
-      namn: '',
-      roll: '',
-      mobil: '',
-      direkt: '',
-      epost: ''
-    }]
+    ovrigt: ''
   });
 
-  const [kassaData, setKassaData] = useState({
-    verksamhetstyp: '',
-    omsattning: '',
-    transaktioner: '',
-    kassaplatser: [{
-      platsNamn: '',
-      hardvara: '',
-      skrivare: '',
-      kortlasare: '',
-      streckkod: ''
-    }],
-    betalmetoder: {
-      kort: false,
-      swish: false,
-      kontant: false
-    },
-    integrationer: ''
-  });
-
+  // KÖRJOURNAL: minimalt + lista fordon + fri text
   const [korjournalData, setKorjournalData] = useState({
-    fordon: [{
-      regnr: '',
-      marke: '',
-      modell: '',
-      milersattning: ''
-    }],
-    forare: [{
-      namn: '',
-      personnummer: '',
-      korkort: '',
-      mobil: ''
-    }]
+    leverantorNu: '',
+    leverantorSen: '',
+    fordon: [{ regnr: '' }],
+    ovrigt: ''
   });
+
 
   // Validation
   const [errors, setErrors] = useState({});
 
+  const formatServiceLabel = (key) => {
+    const map = {
+      telefoni: 'Telefoni',
+      vaxel: 'Växel',
+      korjournal: 'Körjournal',
+    };
+    return map[key] || key;
+  };
+
+  const minusTwoMonths = (yyyyMmDd) => {
+    if (!yyyyMmDd) return '';
+    const [y, m, d] = yyyyMmDd.split('-').map(Number);
+    const dt = new Date(y, m - 1, d);
+    dt.setMonth(dt.getMonth() - 2);
+    const yy = dt.getFullYear();
+    const mm = String(dt.getMonth() + 1).padStart(2, '0');
+    const dd = String(dt.getDate()).padStart(2, '0');
+    return `${yy}-${mm}-${dd}`;
+  };
+
   const validateForm = () => {
     const newErrors = {};
 
+    // Säljare måste vara vald
     if (!saljare) newErrors.saljare = 'Du måste välja ditt namn först!';
+
+    // Måste välja en tjänst
+    if (!selectedService) newErrors.selectedService = 'Välj en tjänst';
+
+    // Trello meta (minimalt krav: prio + driftStart)
+    if (!trelloMeta.driftStart) newErrors.driftStart = 'Välj driftsättningsdatum';
 
     // Base validation
     if (!baseInfo.foretag) newErrors.foretag = 'Företagsnamn krävs';
     if (!baseInfo.organisationsnummer) newErrors.organisationsnummer = 'Org.nummer krävs';
-    if (!baseInfo.antalAnstallda || Number(baseInfo.antalAnstallda) < 1) newErrors.antalAnstallda = 'Ange antal anställda';
 
     // Contact validation
     baseInfo.kontakter.forEach((k, i) => {
@@ -127,13 +108,10 @@ function SalesOrderApp() {
       if (!k.epost) newErrors[`kontakt_${i}_epost`] = 'E-post krävs';
     });
 
-    // Service-specific validation
-    if (services.telefoni) {
-      telefoniData.nummer.forEach((n, i) => {
-        if (!n.nuvarandeNummer && !n.anvandarnamn) {
-          newErrors[`telefoni_${i}`] = 'Ange nummer eller användarnamn';
-        }
-      });
+    // Service-specific minimal validation
+    if (selectedService === 'telefoni') {
+      if (!telefoniData.nuvarandeOperator) newErrors.telefoni_nuvarande = 'Välj nuvarande operatör';
+      if (!telefoniData.nastaOperator) newErrors.telefoni_nasta = 'Välj nästa operatör';
     }
 
     setErrors(newErrors);
@@ -141,44 +119,28 @@ function SalesOrderApp() {
   };
 
   const generateEmailBody = () => {
-    const selectedServices = Object.keys(services)
-      .filter(k => services[k])
-      .map(k => k.charAt(0).toUpperCase() + k.slice(1))
-      .join(', ');
+    const serviceLabel = formatServiceLabel(selectedService);
+    const startDatum = minusTwoMonths(trelloMeta.driftStart);
 
-    let body = `
-    📌 PRIO
-    PRIO: _
+    let body = '';
+    body += `📌 PRIO\n_\n\n`;
+    body += `📌 Status\n_\n\n`;
+    body += `📅 Senaste åtgärd\n_\n\n`;
+    body += `📌 Nästa steg\n_\n\n`;
+    body += `🧾 Övrigt\n_\n\n`;
+    body += `🗓 Driftsättning\n${trelloMeta.driftStart || '_'}\n`;
+    body += `⏳ Starta (2 mån innan)\n${startDatum || '_'}\n\n`;
 
-    📌 Status
-    _
-
-    📅 Senaste åtgärd
-    _
-
-    📌 Nästa steg
-    _
-
-    🧾 Övrigt
-    _
-
-    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-    NY ORDER - ${baseInfo.foretag}
-    `;
+    body += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+    body += `NY ORDER - ${baseInfo.foretag}\n`;
     body += `Säljare: ${saljare}\n`;
-    body += `Tjänster: ${selectedServices}\n\n`;
+    body += `Tjänst: ${serviceLabel}\n\n`;
     body += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
     // KUND & BOLAG
     body += `📋 KUND & BOLAGSUPPGIFTER\n\n`;
     body += `Företag: ${baseInfo.foretag}\n`;
-    body += `Org.nummer: ${baseInfo.organisationsnummer}\n`;
-    body += `Besöksadress: ${baseInfo.besoksadress}\n`;
-    body += `Postnummer: ${baseInfo.postnummer}\n`;
-    body += `Postort: ${baseInfo.postort}\n`;
-    body += `Antal anställda: ${baseInfo.antalAnstallda}\n`;
-    body += `Antal arbetsplatser: ${baseInfo.antalArbetsplatser}\n\n`;
+    body += `Org.nummer: ${baseInfo.organisationsnummer}\n\n`;
 
     // KONTAKTPERSONER
     body += `👥 KONTAKTPERSONER\n\n`;
@@ -190,98 +152,40 @@ function SalesOrderApp() {
       body += `  E-post: ${k.epost}\n\n`;
     });
 
-    // FAKTURERING
-    body += `💰 FAKTURERING & EKONOMI\n\n`;
-    body += `Fakturaadress: ${baseInfo.fakturaadress}\n`;
-    body += `Faktura e-post: ${baseInfo.fakturaEpost}\n`;
-    body += `Betalningsvillkor: ${baseInfo.betalningsvillkor} dagar\n`;
-    body += `Referens: ${baseInfo.referens}\n`;
-    body += `Bindningstid: ${baseInfo.bindningstid} månader\n\n`;
+    // BINDNING / SLUTFAKTURA (fri text)
+    body += `💰 BINDNING / SLUTFAKTURA (fri text)\n\n`;
+    body += `${bindningEkonomiText || '_'}\n\n`;
 
-    // TELEFONI
-    if (services.telefoni) {
+    // SERVICEBLOCK
+    if (selectedService === 'telefoni') {
       body += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
       body += `📞 TELEFONI\n\n`;
-      telefoniData.nummer.forEach((n, i) => {
-        body += `Nummer ${i + 1}:\n`;
-        body += `  Nuvarande nummer: ${n.nuvarandeNummer}\n`;
-        body += `  Typ: ${n.typ === 'portering' ? 'Portering' : 'Nytt nummer'}\n`;
-        if (n.typ === 'portering') {
-          body += `  Nuvarande operatör: ${n.operator}\n`;
-          body += `  Porteringsdatum: ${n.portDatum}\n`;
-          body += `  Avtal slutar: ${n.avtalSlut}\n`;
-        } else {
-          body += `  Önskat aktiveringsdatum: ${n.aktivDatum}\n`;
-        }
-        body += `  SIM-typ: ${n.simTyp}\n`;
-        body += `  Användarnamn: ${n.anvandarnamn}\n\n`;
-      });
+      body += `Nuvarande operatör: ${telefoniData.nuvarandeOperator || '_'}\n`;
+      body += `Nästa operatör: ${telefoniData.nastaOperator || '_'}\n\n`;
+      body += `Övrigt (telefoni):\n${telefoniData.ovrigt || '_'}\n\n`;
     }
 
-    // VÄXEL
-    if (services.vaxel) {
+    if (selectedService === 'vaxel') {
       body += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
       body += `☎️ VÄXEL\n\n`;
-      body += `Huvudnummer befintligt: ${vaxelData.huvudnummerBefintligt}\n`;
-      body += `Huvudnummer: ${vaxelData.huvudnummer}\n`;
-      if (vaxelData.huvudnummerBefintligt === 'ja') {
-        body += `Porteringsdatum: ${vaxelData.portDatum}\n`;
-      }
-      body += `Öppettider: ${vaxelData.oppettider}\n`;
-      body += `Koppling: ${vaxelData.koppling}\n`;
-      body += `Stängd hänvisning: ${vaxelData.stangdHanvisning}\n\n`;
-
-      body += `Användare i växeln:\n`;
-      vaxelData.anvandare.forEach((a, i) => {
-        body += `  ${i + 1}. ${a.namn} (${a.roll})\n`;
-        body += `     Mobil: ${a.mobil}\n`;
-        body += `     Direkt: ${a.direkt}\n`;
-        body += `     E-post: ${a.epost}\n\n`;
-      });
+      body += `Nuvarande lösning/leverantör: ${vaxelData.nuvarandeLosning || '_'}\n`;
+      body += `Nästa lösning/leverantör: ${vaxelData.nastaLosning || '_'}\n`;
+      body += `Huvudnummer: ${vaxelData.huvudnummer || '_'}\n`;
+      body += `Öppettider: ${vaxelData.oppettider || '_'}\n\n`;
+      body += `Övrigt (växel):\n${vaxelData.ovrigt || '_'}\n\n`;
     }
 
-    // KASSA
-    if (services.kassa) {
-      body += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
-      body += `💳 KASSA/POS\n\n`;
-      body += `Verksamhetstyp: ${kassaData.verksamhetstyp}\n`;
-      body += `Årlig omsättning: ${kassaData.omsattning}\n`;
-      body += `Transaktioner/månad: ${kassaData.transaktioner}\n\n`;
-
-      body += `Kassaplatser:\n`;
-      kassaData.kassaplatser.forEach((k, i) => {
-        body += `  ${i + 1}. ${k.platsNamn}\n`;
-        body += `     Hårdvara: ${k.hardvara}\n`;
-        body += `     Skrivare: ${k.skrivare}\n`;
-        body += `     Kortläsare: ${k.kortlasare}\n`;
-        body += `     Streckkodsläsare: ${k.streckkod}\n\n`;
-      });
-
-      const metoder = [];
-      if (kassaData.betalmetoder.kort) metoder.push('Kort');
-      if (kassaData.betalmetoder.swish) metoder.push('Swish');
-      if (kassaData.betalmetoder.kontant) metoder.push('Kontant');
-      body += `Betalmetoder: ${metoder.join(', ')}\n`;
-      body += `Integrationer: ${kassaData.integrationer}\n\n`;
-    }
-
-    // KÖRJOURNAL
-    if (services.korjournal) {
+    if (selectedService === 'korjournal') {
       body += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
       body += `🚗 KÖRJOURNAL\n\n`;
+      body += `Nuvarande leverantör: ${korjournalData.leverantorNu || '_'}\n`;
+      body += `Nästa leverantör: ${korjournalData.leverantorSen || '_'}\n\n`;
 
-      body += `Fordon:\n`;
+      body += `Fordon (regnr):\n`;
       korjournalData.fordon.forEach((f, i) => {
-        body += `  ${i + 1}. ${f.marke} ${f.modell} (${f.regnr})\n`;
-        body += `     Milersättning: ${f.milersattning} kr/mil\n\n`;
+        body += `  ${i + 1}. ${f.regnr || '_'}\n`;
       });
-
-      body += `Förare:\n`;
-      korjournalData.forare.forEach((f, i) => {
-        body += `  ${i + 1}. ${f.namn} (${f.personnummer})\n`;
-        body += `     Körkort: ${f.korkort}\n`;
-        body += `     Mobil: ${f.mobil}\n\n`;
-      });
+      body += `\nÖvrigt (körjournal):\n${korjournalData.ovrigt || '_'}\n\n`;
     }
 
     return body;
@@ -289,14 +193,12 @@ function SalesOrderApp() {
 
   const handleSendOrder = () => {
     if (!validateForm()) {
-      alert('Vänligen fyll i alla obligatoriska fält(inklusive ditt namn!)');
+      alert('Vänligen fyll i alla obligatoriska fält (inklusive ditt namn och driftsättningsdatum).');
       return;
     }
 
-    const subject = `Ny order - ${baseInfo.foretag} - ${Object.keys(services)
-      .filter(k => services[k])
-      .map(k => k.charAt(0).toUpperCase() + k.slice(1))
-      .join(', ')}`;
+    const serviceLabel = formatServiceLabel(selectedService);
+    const subject = `Ny order - ${baseInfo.foretag} - ${serviceLabel}`;
 
     const body = generateEmailBody();
 
@@ -307,10 +209,10 @@ function SalesOrderApp() {
       `&subject=${encodeURIComponent(subject)}` +
       `&body=${encodeURIComponent(body)}`;
 
-      window.location.href = mailtoLink;
+    window.location.href = mailtoLink;
   };
 
-  // Helper functions for repeatable lists
+  // Helper functions för repeatable listor
   const addItem = (setState, currentData, key, template) => {
     setState({
       ...currentData,
@@ -332,44 +234,43 @@ function SalesOrderApp() {
   };
 
   const completionPercentage = () => {
-    let total = 10; // Base fields
+    let total = 10;
     let filled = 0;
 
+    // Trello meta
+    total += 2;
+    if (trelloMeta.driftStart) filled++;
+
+    // Base
     if (baseInfo.foretag) filled++;
     if (baseInfo.organisationsnummer) filled++;
-    if (baseInfo.antalAnstallda) filled++;
-    if (baseInfo.fakturaEpost) filled++;
     if (baseInfo.kontakter[0].namn) filled++;
+    if (baseInfo.kontakter[0].epost) filled++;
 
-    if (services.telefoni) {
-      total += 3;
-      if (telefoniData.nummer[0].nuvarandeNummer) filled++;
-      if (telefoniData.nummer[0].typ) filled++;
-      if (telefoniData.nummer[0].simTyp) filled++;
-    }
+    // Service selected
+    if (selectedService) filled++;
 
-    if (services.vaxel) {
+    // Service min
+    if (selectedService === 'telefoni') {
       total += 2;
-      if (vaxelData.huvudnummer) filled++;
-      if (vaxelData.oppettider) filled++;
-    }
-
-    if (services.kassa) {
-      total += 2;
-      if (kassaData.verksamhetstyp) filled++;
-      if (kassaData.omsattning) filled++;
-    }
-
-    if (services.korjournal) {
-      total += 2;
-      if (korjournalData.fordon[0].regnr) filled++;
-      if (korjournalData.forare[0].namn) filled++;
+      if (telefoniData.nuvarandeOperator) filled++;
+      if (telefoniData.nastaOperator) filled++;
     }
 
     return Math.round((filled / total) * 100);
   };
 
-  const anyServiceSelected = Object.values(services).some(v => v);
+  const anyServiceSelected = !!selectedService;
+
+  // All operators - for "Nuvarande operatör"
+  const allOperatorOptions = [
+    '', 'Telia', 'Tele2', 'Telenor', '3 (Tre)', 'Hallon', 'Vimla', 'Comviq', 'Chilimobil', 'Fello', 'Annat'
+  ];
+
+  // Only the big 4 - for "Nästa operatör"
+  const bigFourOperators = [
+    '', 'Telia', 'Tele2', 'Telenor', '3 (Tre)'
+  ];
 
   return (
     <div style={{
@@ -380,7 +281,6 @@ function SalesOrderApp() {
     }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Space+Mono:wght@400;700&display=swap');
-
         * { box-sizing: border-box; }
 
         .service-card {
@@ -392,17 +292,15 @@ function SalesOrderApp() {
           cursor: pointer;
           backdrop-filter: blur(10px);
         }
-
-        .service-card:hover {
-          border-color: rgba(34, 211, 238, 0.4);
+       .service-card:hover {
+          border-color: rgba(85, 199, 219, 0.4);
           transform: translateY(-2px);
-          box-shadow: 0 8px 24px rgba(34, 211, 238, 0.15);
+          box-shadow: 0 8px 24px rgba(85, 199, 219, 0.15);
         }
-
         .service-card.active {
-          background: rgba(6, 182, 212, 0.1);
-          border-color: #06b6d4;
-          box-shadow: 0 0 24px rgba(6, 182, 212, 0.2);
+          background: rgba(85, 199, 219, 0.1);
+          border-color: #55c7db;
+          box-shadow: 0 0 24px rgba(85, 199, 219, 0.2);
         }
 
         .form-section {
@@ -431,16 +329,13 @@ function SalesOrderApp() {
           font-family: 'DM Sans', sans-serif;
           transition: all 0.2s;
         }
-
         .input-field:focus {
           outline: none;
-          border-color: #06b6d4;
+          border-color: #55c7db;
           background: rgba(15, 23, 42, 0.8);
-          box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.1);
+          box-shadow: 0 0 0 3px rgba(85, 199, 219, 0.1);
         }
-
         .input-field.error { border-color: #ef4444; }
-
         select.input-field { cursor: pointer; }
 
         .btn {
@@ -456,33 +351,27 @@ function SalesOrderApp() {
           align-items: center;
           gap: 8px;
         }
-
         .btn-primary {
-          background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%);
+          background: linear-gradient(135deg, #55c7db 0%, #a39acb 100%);
           color: white;
           box-shadow: 0 4px 12px rgba(6, 182, 212, 0.3);
         }
-
         .btn-primary:hover {
           transform: translateY(-2px);
           box-shadow: 0 6px 20px rgba(6, 182, 212, 0.4);
         }
-
         .btn-secondary {
           background: rgba(239, 68, 68, 0.1);
           color: #fca5a5;
           border: 1px solid rgba(239, 68, 68, 0.3);
           padding: 8px 10px;
         }
-
         .btn-secondary:hover { background: rgba(239, 68, 68, 0.2); }
-
         .btn-add {
           background: rgba(34, 197, 94, 0.1);
           color: #86efac;
           border: 1px solid rgba(34, 197, 94, 0.3);
         }
-
         .btn-add:hover { background: rgba(34, 197, 94, 0.2); }
 
         .progress-bar {
@@ -492,32 +381,12 @@ function SalesOrderApp() {
           overflow: hidden;
           margin-bottom: 8px;
         }
-
         .progress-fill {
           height: 100%;
-          background: linear-gradient(90deg, #06b6d4, #22c55e);
+          background: linear-gradient(90deg, #55c7db, #a39acb);
           border-radius: 999px;
           transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
           box-shadow: 0 0 12px rgba(6, 182, 212, 0.5);
-        }
-
-        .checkbox-label {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          cursor: pointer;
-          padding: 8px;
-          border-radius: 6px;
-          transition: background 0.2s;
-        }
-
-        .checkbox-label:hover { background: rgba(148, 163, 184, 0.05); }
-
-        input[type="checkbox"] {
-          width: 20px;
-          height: 20px;
-          cursor: pointer;
-          accent-color: #06b6d4;
         }
 
         .repeatable-item {
@@ -528,12 +397,8 @@ function SalesOrderApp() {
           margin-bottom: 16px;
           position: relative;
         }
-
-        .error-text {
-          color: #fca5a5;
-          font-size: 13px;
-          margin-top: 4px;
-        }
+        .error-text { color: #fca5a5; font-size: 13px; margin-top: 4px; }
+        textarea.input-field { min-height: 110px; resize: vertical; }
       `}</style>
 
       {/* Header */}
@@ -553,7 +418,7 @@ function SalesOrderApp() {
                 fontSize: '28px',
                 fontWeight: '700',
                 margin: '0 0 8px 0',
-                background: 'linear-gradient(135deg, #06b6d4, #22c55e)',
+                background: 'linear-gradient(135deg, #55c7db 0%, #a39acb 100%)',
                 WebkitBackgroundClip: 'text',
                 WebkitTextFillColor: 'transparent',
                 fontFamily: 'Space Mono, monospace'
@@ -565,24 +430,21 @@ function SalesOrderApp() {
               </p>
             </div>
 
-            {anyServiceSelected && (
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ marginBottom: '8px' }}>
-                  <div className="progress-bar" style={{ width: '200px' }}>
-                    <div className="progress-fill" style={{ width: `${completionPercentage()}%` }} />
-                  </div>
-                  <div style={{ fontSize: '13px', color: '#94a3b8', fontFamily: 'Space Mono, monospace' }}>
-                    {completionPercentage()}% komplett
-                  </div>
-                </div>
+            <div style={{ textAlign: 'right' }}>
+              <div className="progress-bar" style={{ width: '200px' }}>
+                <div className="progress-fill" style={{ width: `${completionPercentage()}%` }} />
               </div>
-            )}
+              <div style={{ fontSize: '13px', color: '#94a3b8', fontFamily: 'Space Mono, monospace' }}>
+                {completionPercentage()}% komplett
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
       <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '40px 24px' }}>
 
+        {/* Säljare */}
         <div className="form-section">
           <h2 style={{
             fontSize: '20px',
@@ -593,7 +455,7 @@ function SalesOrderApp() {
             gap: '12px'
           }}>
             <span style={{
-              background: 'linear-gradient(135deg, #06b6d4, #0891b2)',
+              background: 'linear-gradient(135deg, #55c7db 0%, #a39acb 100%)',
               width: '32px',
               height: '32px',
               borderRadius: '8px',
@@ -615,33 +477,51 @@ function SalesOrderApp() {
             <option value="Adam">Adam</option>
             <option value="Kosrat">Kosrat</option>
             <option value="Kevin">Kevin</option>
-            
           </select>
 
           {errors.saljare && <div className="error-text">{errors.saljare}</div>}
+        </div>
 
-          {saljare && (
-            <div style={{
-              marginTop: '16px',
-              padding: '16px',
-              background: 'rgba(34, 197, 94, 0.1)',
-              border: '1px solid rgba(34, 197, 94, 0.3)',
+        {/* Trello meta */}
+        <div className="form-section">
+          <h2 style={{
+            fontSize: '20px',
+            fontWeight: '600',
+            marginBottom: '24px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px'
+          }}>
+            <span style={{
+              background: 'linear-gradient(135deg, #55c7db 0%, #a39acb 100%)',
+              width: '32px',
+              height: '32px',
               borderRadius: '8px',
-              color: '#86efac',
-              fontSize: '14px',
               display: 'flex',
               alignItems: 'center',
-              gap: '8px'
-            }}>
-              <span style={{ fontSize: '20px' }}>✅</span>
-              <div>
-                <div style={{ fontWeight: '600' }}>Trello-kort kommer skapas automatiskt!</div>
-                <div style={{ opacity: 0.8, marginTop: '4px' }}>
-                  När du skickar mejlet skapas ett kort på {saljare}s implementeringstavla
-                </div>
+              justifyContent: 'center',
+              fontSize: '18px'
+            }}>⚡</span>
+            Planering
+          </h2>
+
+          <div style={{ maxWidth: '400px' }}>
+            <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
+              Driftsättningsdatum *
+            </label>
+            <input
+              type="date"
+              className={`input-field ${errors.driftStart ? 'error' : ''}`}
+              value={trelloMeta.driftStart}
+              onChange={(e) => setTrelloMeta({ ...trelloMeta, driftStart: e.target.value })}
+            />
+            {errors.driftStart && <div className="error-text">{errors.driftStart}</div>}
+            {trelloMeta.driftStart && (
+              <div style={{ marginTop: '8px', fontSize: '13px', color: '#94a3b8' }}>
+                Starta 2 månader innan: <span style={{ color: '#86efac' }}>{minusTwoMonths(trelloMeta.driftStart)}</span>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         {/* Service Selection */}
@@ -655,7 +535,7 @@ function SalesOrderApp() {
             gap: '12px'
           }}>
             <span style={{
-              background: 'linear-gradient(135deg, #06b6d4, #0891b2)',
+              background: 'linear-gradient(135deg, #55c7db 0%, #a39acb 100%)',
               width: '32px',
               height: '32px',
               borderRadius: '8px',
@@ -664,8 +544,10 @@ function SalesOrderApp() {
               justifyContent: 'center',
               fontSize: '18px'
             }}>1</span>
-            Välj tjänster
+            Välj tjänst (en i taget)
           </h2>
+
+          {errors.selectedService && <div className="error-text" style={{ marginBottom: '12px' }}>{errors.selectedService}</div>}
 
           <div style={{
             display: 'grid',
@@ -675,20 +557,19 @@ function SalesOrderApp() {
             {[
               { key: 'telefoni', label: 'Telefoni', icon: '📞' },
               { key: 'vaxel', label: 'Växel', icon: '☎️' },
-              { key: 'kassa', label: 'Kassa/POS', icon: '💳' },
-              { key: 'korjournal', label: 'Körjournal', icon: '🚗' }
+              { key: 'korjournal', label: 'Körjournal', icon: '🚗' },
             ].map(service => (
               <div
                 key={service.key}
-                className={`service-card ${services[service.key] ? 'active' : ''}`}
-                onClick={() => setServices({ ...services, [service.key]: !services[service.key] })}
+                className={`service-card ${selectedService === service.key ? 'active' : ''}`}
+                onClick={() => setSelectedService(service.key)}
               >
                 <div style={{ fontSize: '32px', marginBottom: '12px' }}>{service.icon}</div>
                 <div style={{ fontSize: '18px', fontWeight: '600' }}>{service.label}</div>
-                {services[service.key] && (
+                {selectedService === service.key && (
                   <div style={{
                     marginTop: '12px',
-                    color: '#06b6d4',
+                    color: '#55c7db',
                     fontSize: '13px',
                     display: 'flex',
                     alignItems: 'center',
@@ -715,7 +596,7 @@ function SalesOrderApp() {
                 gap: '12px'
               }}>
                 <span style={{
-                  background: 'linear-gradient(135deg, #06b6d4, #0891b2)',
+                  background: 'linear-gradient(135deg, #55c7db 0%, #a39acb 100%)',
                   width: '32px',
                   height: '32px',
                   borderRadius: '8px',
@@ -753,72 +634,6 @@ function SalesOrderApp() {
                   />
                   {errors.organisationsnummer && <div className="error-text">{errors.organisationsnummer}</div>}
                 </div>
-
-                <div>
-                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
-                    Besöksadress
-                  </label>
-                  <input
-                    className="input-field"
-                    value={baseInfo.besoksadress}
-                    onChange={(e) => setBaseInfo({ ...baseInfo, besoksadress: e.target.value })}
-                    placeholder="Gatugatan 1"
-                  />
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '12px' }}>
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
-                      Postnummer
-                    </label>
-                    <input
-                      className="input-field"
-                      value={baseInfo.postnummer}
-                      onChange={(e) => setBaseInfo({ ...baseInfo, postnummer: e.target.value })}
-                      placeholder="123 45"
-                    />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
-                      Postort
-                    </label>
-                    <input
-                      className="input-field"
-                      value={baseInfo.postort}
-                      onChange={(e) => setBaseInfo({ ...baseInfo, postort: e.target.value })}
-                      placeholder="Stockholm"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
-                    Antal anställda *
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    className={`input-field ${errors.antalAnstallda ? 'error' : ''}`}
-                    value={baseInfo.antalAnstallda}
-                    onChange={(e) => setBaseInfo({ ...baseInfo, antalAnstallda: e.target.value })}
-                    placeholder="5"
-                  />
-                  {errors.antalAnstallda && <div className="error-text">{errors.antalAnstallda}</div>}
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
-                    Antal arbetsplatser
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    className="input-field"
-                    value={baseInfo.antalArbetsplatser}
-                    onChange={(e) => setBaseInfo({ ...baseInfo, antalArbetsplatser: e.target.value })}
-                    placeholder="1"
-                  />
-                </div>
               </div>
             </div>
 
@@ -834,7 +649,7 @@ function SalesOrderApp() {
               }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <span style={{
-                    background: 'linear-gradient(135deg, #06b6d4, #0891b2)',
+                    background: 'linear-gradient(135deg, #55c7db 0%, #a39acb 100%)',
                     width: '32px',
                     height: '32px',
                     borderRadius: '8px',
@@ -927,18 +742,18 @@ function SalesOrderApp() {
               ))}
             </div>
 
-            {/* Fakturering */}
+            {/* Bindning/slutfaktura - fri text */}
             <div className="form-section">
               <h2 style={{
                 fontSize: '20px',
                 fontWeight: '600',
-                marginBottom: '24px',
+                marginBottom: '12px',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '12px'
               }}>
                 <span style={{
-                  background: 'linear-gradient(135deg, #06b6d4, #0891b2)',
+                  background: 'linear-gradient(135deg, #55c7db 0%, #a39acb 100%)',
                   width: '32px',
                   height: '32px',
                   borderRadius: '8px',
@@ -947,297 +762,108 @@ function SalesOrderApp() {
                   justifyContent: 'center',
                   fontSize: '18px'
                 }}>4</span>
-                Fakturering & Ekonomi
+                Bindning / Slutfaktura (fri text)
               </h2>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-                <div>
-                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
-                    Fakturaadress
-                  </label>
-                  <input
-                    className="input-field"
-                    value={baseInfo.fakturaadress}
-                    onChange={(e) => setBaseInfo({ ...baseInfo, fakturaadress: e.target.value })}
-                    placeholder="Om avvikande från besöksadress"
-                  />
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
-                    E-postadress för faktura
-                  </label>
-                  <input
-                    type="email"
-                    className="input-field"
-                    value={baseInfo.fakturaEpost}
-                    onChange={(e) => setBaseInfo({ ...baseInfo, fakturaEpost: e.target.value })}
-                    placeholder="ekonomi@foretag.se"
-                  />
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
-                    Betalningsvillkor (dagar)
-                  </label>
-                  <select
-                    className="input-field"
-                    value={baseInfo.betalningsvillkor}
-                    onChange={(e) => setBaseInfo({ ...baseInfo, betalningsvillkor: e.target.value })}
-                  >
-                    <option value="10">10 dagar</option>
-                    <option value="20">20 dagar</option>
-                    <option value="30">30 dagar</option>
-                    <option value="60">60 dagar</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
-                    Er referens
-                  </label>
-                  <input
-                    className="input-field"
-                    value={baseInfo.referens}
-                    onChange={(e) => setBaseInfo({ ...baseInfo, referens: e.target.value })}
-                    placeholder="Projektnummer eller kontakt"
-                  />
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
-                    Bindningstid (månader)
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="36"
-                    className="input-field"
-                    value={baseInfo.bindningstid}
-                    onChange={(e) => setBaseInfo({ ...baseInfo, bindningstid: e.target.value })}
-                    placeholder="12"
-                  />
-                </div>
+              <div style={{ color: '#94a3b8', fontSize: '13px', marginBottom: '10px' }}>
+                Ex: “Kund har privata abonnemang 2 st… 15 st på företag… 8 mån bindning kvar… slutfaktura ca …”
               </div>
+
+              <textarea
+                className="input-field"
+                value={bindningEkonomiText}
+                onChange={(e) => setBindningEkonomiText(e.target.value)}
+                placeholder="Skriv allt om bindning/slutfaktura här…"
+              />
             </div>
 
-            {/* TELEFONI */}
-            {services.telefoni && (
+            {/* SERVICE: TELEFONI */}
+            {selectedService === 'telefoni' && (
               <div className="form-section">
-                <h2 style={{
-                  fontSize: '20px',
-                  fontWeight: '600',
-                  marginBottom: '24px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between'
-                }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <span style={{ fontSize: '24px' }}>📞</span>
-                    Telefoni
-                  </span>
-                  <button
-                    className="btn btn-add"
-                    onClick={() => addItem(
-                      setTelefoniData,
-                      telefoniData,
-                      'nummer',
-                      {
-                        nuvarandeNummer: '',
-                        typ: 'portering',
-                        operator: '',
-                        simTyp: '',
-                        portDatum: '',
-                        avtalSlut: '',
-                        aktivDatum: '',
-                        anvandarnamn: ''
-                      }
-                    )}
-                  >
-                    + Lägg till nummer
-                  </button>
+                <h2 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <span style={{ fontSize: '24px' }}>📞</span>
+                  Telefoni
                 </h2>
 
-                {telefoniData.nummer.map((nummer, index) => (
-                  <div key={index} className="repeatable-item">
-                    {telefoniData.nummer.length > 1 && (
-                      <button
-                        className="btn btn-secondary"
-                        style={{ position: 'absolute', top: '12px', right: '12px' }}
-                        onClick={() => removeItem(setTelefoniData, telefoniData, 'nummer', index)}
-                        title="Ta bort"
-                      >
-                        ×
-                      </button>
-                    )}
-
-                    <h3 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '16px', color: '#06b6d4' }}>
-                      Nummer {index + 1}
-                    </h3>
-
-                    {errors[`telefoni_${index}`] && <div className="error-text">{errors[`telefoni_${index}`]}</div>}
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                      <div>
-                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
-                          Nuvarande nummer
-                        </label>
-                        <input
-                          className="input-field"
-                          value={nummer.nuvarandeNummer}
-                          onChange={(e) => updateItem(setTelefoniData, telefoniData, 'nummer', index, 'nuvarandeNummer', e.target.value)}
-                          placeholder="070-XXX XX XX"
-                        />
-                      </div>
-
-                      <div>
-                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
-                          Typ
-                        </label>
-                        <select
-                          className="input-field"
-                          value={nummer.typ}
-                          onChange={(e) => updateItem(setTelefoniData, telefoniData, 'nummer', index, 'typ', e.target.value)}
-                        >
-                          <option value="portering">Portering (befintligt nummer)</option>
-                          <option value="nytt">Nytt nummer</option>
-                        </select>
-                      </div>
-
-                      {nummer.typ === 'portering' && (
-                        <>
-                          <div>
-                            <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
-                              Nuvarande operatör
-                            </label>
-                            <select
-                              className="input-field"
-                              value={nummer.operator}
-                              onChange={(e) => updateItem(setTelefoniData, telefoniData, 'nummer', index, 'operator', e.target.value)}
-                            >
-                              <option value="">Välj operatör</option>
-                              <option value="Telia">Telia</option>
-                              <option value="Tele2">Tele2</option>
-                              <option value="Telenor">Telenor</option>
-                              <option value="3">3 (Tre)</option>
-                              <option value="Hallon">Hallon</option>
-                              <option value="Annat">Annat</option>
-                            </select>
-                          </div>
-
-                          <div>
-                            <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
-                              Önskat porteringsdatum
-                            </label>
-                            <input
-                              type="date"
-                              className="input-field"
-                              value={nummer.portDatum}
-                              onChange={(e) => updateItem(setTelefoniData, telefoniData, 'nummer', index, 'portDatum', e.target.value)}
-                            />
-                          </div>
-
-                          <div>
-                            <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
-                              Avtal slutar (hos nuvarande)
-                            </label>
-                            <input
-                              type="date"
-                              className="input-field"
-                              value={nummer.avtalSlut}
-                              onChange={(e) => updateItem(setTelefoniData, telefoniData, 'nummer', index, 'avtalSlut', e.target.value)}
-                            />
-                          </div>
-                        </>
-                      )}
-
-                      {nummer.typ === 'nytt' && (
-                        <div>
-                          <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
-                            Önskat aktiveringsdatum
-                          </label>
-                          <input
-                            type="date"
-                            className="input-field"
-                            value={nummer.aktivDatum}
-                            onChange={(e) => updateItem(setTelefoniData, telefoniData, 'nummer', index, 'aktivDatum', e.target.value)}
-                          />
-                        </div>
-                      )}
-
-                      <div>
-                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
-                          SIM-typ
-                        </label>
-                        <select
-                          className="input-field"
-                          value={nummer.simTyp}
-                          onChange={(e) => updateItem(setTelefoniData, telefoniData, 'nummer', index, 'simTyp', e.target.value)}
-                        >
-                          <option value="">Välj SIM-typ</option>
-                          <option value="Fysiskt SIM">Fysiskt SIM</option>
-                          <option value="eSIM">eSIM</option>
-                        </select>
-                      </div>
-
-                      <div>
-                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
-                          Användare/Anställd
-                        </label>
-                        <input
-                          className="input-field"
-                          value={nummer.anvandarnamn}
-                          onChange={(e) => updateItem(setTelefoniData, telefoniData, 'nummer', index, 'anvandarnamn', e.target.value)}
-                          placeholder="Anna Andersson"
-                        />
-                      </div>
-                    </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
+                      Nuvarande operatör *
+                    </label>
+                    <select
+                      className={`input-field ${errors.telefoni_nuvarande ? 'error' : ''}`}
+                      value={telefoniData.nuvarandeOperator}
+                      onChange={(e) => setTelefoniData({ ...telefoniData, nuvarandeOperator: e.target.value })}
+                    >
+                      {allOperatorOptions.map(op => (
+                        <option key={op} value={op}>{op || 'Välj…'}</option>
+                      ))}
+                    </select>
+                    {errors.telefoni_nuvarande && <div className="error-text">{errors.telefoni_nuvarande}</div>}
                   </div>
-                ))}
+
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
+                      Nästa operatör *
+                    </label>
+                    <select
+                      className={`input-field ${errors.telefoni_nasta ? 'error' : ''}`}
+                      value={telefoniData.nastaOperator}
+                      onChange={(e) => setTelefoniData({ ...telefoniData, nastaOperator: e.target.value })}
+                    >
+                      {bigFourOperators.map(op => (
+                        <option key={op} value={op}>{op || 'Välj…'}</option>
+                      ))}
+                    </select>
+                    {errors.telefoni_nasta && <div className="error-text">{errors.telefoni_nasta}</div>}
+                  </div>
+
+                  <div style={{ gridColumn: '1 / -1' }}>
+                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
+                      Övrigt (telefoni)
+                    </label>
+                    <textarea
+                      className="input-field"
+                      value={telefoniData.ovrigt}
+                      onChange={(e) => setTelefoniData({ ...telefoniData, ovrigt: e.target.value })}
+                      placeholder="Allt som inte passar i fälten. Ex: antal abonnemang, specialfall, etc."
+                    />
+                  </div>
+                </div>
               </div>
             )}
 
-            {/* VÄXEL */}
-            {services.vaxel && (
+            {/* SERVICE: VÄXEL */}
+            {selectedService === 'vaxel' && (
               <div className="form-section">
-                <h2 style={{
-                  fontSize: '20px',
-                  fontWeight: '600',
-                  marginBottom: '24px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between'
-                }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <span style={{ fontSize: '24px' }}>☎️</span>
-                    Växel
-                  </span>
-                  <button
-                    className="btn btn-add"
-                    onClick={() => addItem(
-                      setVaxelData,
-                      vaxelData,
-                      'anvandare',
-                      { namn: '', roll: '', mobil: '', direkt: '', epost: '' }
-                    )}
-                  >
-                    + Lägg till användare
-                  </button>
+                <h2 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <span style={{ fontSize: '24px' }}>☎️</span>
+                  Växel
                 </h2>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '24px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                   <div>
                     <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
-                      Huvudnummer befintligt?
+                      Nuvarande lösning/leverantör
                     </label>
-                    <select
+                    <input
                       className="input-field"
-                      value={vaxelData.huvudnummerBefintligt}
-                      onChange={(e) => setVaxelData({ ...vaxelData, huvudnummerBefintligt: e.target.value })}
-                    >
-                      <option value="nej">Nej, nytt nummer</option>
-                      <option value="ja">Ja, portera befintligt</option>
-                    </select>
+                      value={vaxelData.nuvarandeLosning}
+                      onChange={(e) => setVaxelData({ ...vaxelData, nuvarandeLosning: e.target.value })}
+                      placeholder="Ex: Telia Touchpoint / annan"
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
+                      Nästa lösning/leverantör
+                    </label>
+                    <input
+                      className="input-field"
+                      value={vaxelData.nastaLosning}
+                      onChange={(e) => setVaxelData({ ...vaxelData, nastaLosning: e.target.value })}
+                      placeholder="Ex: Tele2 / Telenor / etc."
+                    />
                   </div>
 
                   <div>
@@ -1248,23 +874,9 @@ function SalesOrderApp() {
                       className="input-field"
                       value={vaxelData.huvudnummer}
                       onChange={(e) => setVaxelData({ ...vaxelData, huvudnummer: e.target.value })}
-                      placeholder="08-XXX XX XX"
+                      placeholder="08-xxx xx xx"
                     />
                   </div>
-
-                  {vaxelData.huvudnummerBefintligt === 'ja' && (
-                    <div>
-                      <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
-                        Porteringsdatum
-                      </label>
-                      <input
-                        type="date"
-                        className="input-field"
-                        value={vaxelData.portDatum}
-                        onChange={(e) => setVaxelData({ ...vaxelData, portDatum: e.target.value })}
-                      />
-                    </div>
-                  )}
 
                   <div>
                     <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
@@ -1274,502 +886,101 @@ function SalesOrderApp() {
                       className="input-field"
                       value={vaxelData.oppettider}
                       onChange={(e) => setVaxelData({ ...vaxelData, oppettider: e.target.value })}
-                      placeholder="Mån-Fre 08:00-17:00"
+                      placeholder="Ex: 08–17"
                     />
-                  </div>
-
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
-                      Koppling (ringsignal)
-                    </label>
-                    <select
-                      className="input-field"
-                      value={vaxelData.koppling}
-                      onChange={(e) => setVaxelData({ ...vaxelData, koppling: e.target.value })}
-                    >
-                      <option value="">Välj typ</option>
-                      <option value="Alla samtidigt">Ring alla samtidigt</option>
-                      <option value="Eftervarann">Ring efter varann</option>
-                      <option value="IVR/Meny">IVR/Meny först</option>
-                    </select>
                   </div>
 
                   <div style={{ gridColumn: '1 / -1' }}>
                     <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
-                      Hänvisning vid stängt
+                      Övrigt (växel)
                     </label>
-                    <input
+                    <textarea
                       className="input-field"
-                      value={vaxelData.stangdHanvisning}
-                      onChange={(e) => setVaxelData({ ...vaxelData, stangdHanvisning: e.target.value })}
-                      placeholder="Röstbrevlåda, mobilnummer, e-post"
+                      value={vaxelData.ovrigt}
+                      onChange={(e) => setVaxelData({ ...vaxelData, ovrigt: e.target.value })}
+                      placeholder="Ex: menyval, kö, hänvisning, specialregler, etc."
                     />
                   </div>
                 </div>
-
-                <h3 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '16px', color: '#06b6d4' }}>
-                  Användare i växeln
-                </h3>
-
-                {vaxelData.anvandare.map((user, index) => (
-                  <div key={index} className="repeatable-item">
-                    {vaxelData.anvandare.length > 1 && (
-                      <button
-                        className="btn btn-secondary"
-                        style={{ position: 'absolute', top: '12px', right: '12px' }}
-                        onClick={() => removeItem(setVaxelData, vaxelData, 'anvandare', index)}
-                        title="Ta bort"
-                      >
-                        ×
-                      </button>
-                    )}
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                      <div>
-                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
-                          Namn
-                        </label>
-                        <input
-                          className="input-field"
-                          value={user.namn}
-                          onChange={(e) => updateItem(setVaxelData, vaxelData, 'anvandare', index, 'namn', e.target.value)}
-                          placeholder="Anna Andersson"
-                        />
-                      </div>
-
-                      <div>
-                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
-                          Roll
-                        </label>
-                        <input
-                          className="input-field"
-                          value={user.roll}
-                          onChange={(e) => updateItem(setVaxelData, vaxelData, 'anvandare', index, 'roll', e.target.value)}
-                          placeholder="Receptionist"
-                        />
-                      </div>
-
-                      <div>
-                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
-                          Mobilnummer
-                        </label>
-                        <input
-                          className="input-field"
-                          value={user.mobil}
-                          onChange={(e) => updateItem(setVaxelData, vaxelData, 'anvandare', index, 'mobil', e.target.value)}
-                          placeholder="070-XXX XX XX"
-                        />
-                      </div>
-
-                      <div>
-                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
-                          Direkt (anknytning)
-                        </label>
-                        <input
-                          className="input-field"
-                          value={user.direkt}
-                          onChange={(e) => updateItem(setVaxelData, vaxelData, 'anvandare', index, 'direkt', e.target.value)}
-                          placeholder="101"
-                        />
-                      </div>
-
-                      <div>
-                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
-                          E-post
-                        </label>
-                        <input
-                          type="email"
-                          className="input-field"
-                          value={user.epost}
-                          onChange={(e) => updateItem(setVaxelData, vaxelData, 'anvandare', index, 'epost', e.target.value)}
-                          placeholder="anna@foretag.se"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                ))}
               </div>
             )}
 
-            {/* KASSA */}
-            {services.kassa && (
+            {/* SERVICE: KÖRJOURNAL */}
+            {selectedService === 'korjournal' && (
               <div className="form-section">
-                <h2 style={{
-                  fontSize: '20px',
-                  fontWeight: '600',
-                  marginBottom: '24px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between'
-                }}>
+                <h2 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <span style={{ fontSize: '24px' }}>💳</span>
-                    Kassa/POS
+                    <span style={{ fontSize: '24px' }}>🚗</span>
+                    Körjournal
                   </span>
                   <button
                     className="btn btn-add"
-                    onClick={() => addItem(
-                      setKassaData,
-                      kassaData,
-                      'kassaplatser',
-                      { platsNamn: '', hardvara: '', skrivare: '', kortlasare: '', streckkod: '' }
-                    )}
+                    onClick={() => addItem(setKorjournalData, korjournalData, 'fordon', { regnr: '' })}
                   >
-                    + Lägg till kassaplats
+                    + Lägg till fordon
                   </button>
                 </h2>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '24px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
                   <div>
                     <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
-                      Verksamhetstyp
+                      Nuvarande leverantör
                     </label>
                     <input
                       className="input-field"
-                      value={kassaData.verksamhetstyp}
-                      onChange={(e) => setKassaData({ ...kassaData, verksamhetstyp: e.target.value })}
-                      placeholder="Butik, Café, Restaurang"
+                      value={korjournalData.leverantorNu}
+                      onChange={(e) => setKorjournalData({ ...korjournalData, leverantorNu: e.target.value })}
+                      placeholder="Ex: Fleat / annan"
                     />
                   </div>
-
                   <div>
                     <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
-                      Årlig omsättning (kr)
+                      Nästa leverantör
                     </label>
                     <input
                       className="input-field"
-                      value={kassaData.omsattning}
-                      onChange={(e) => setKassaData({ ...kassaData, omsattning: e.target.value })}
-                      placeholder="1 000 000"
-                    />
-                  </div>
-
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
-                      Transaktioner per månad (ca)
-                    </label>
-                    <input
-                      className="input-field"
-                      value={kassaData.transaktioner}
-                      onChange={(e) => setKassaData({ ...kassaData, transaktioner: e.target.value })}
-                      placeholder="500"
-                    />
-                  </div>
-
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
-                      Integrationer
-                    </label>
-                    <input
-                      className="input-field"
-                      value={kassaData.integrationer}
-                      onChange={(e) => setKassaData({ ...kassaData, integrationer: e.target.value })}
-                      placeholder="Fortnox, Visma, Annat"
+                      value={korjournalData.leverantorSen}
+                      onChange={(e) => setKorjournalData({ ...korjournalData, leverantorSen: e.target.value })}
+                      placeholder="Ex: ny leverantör"
                     />
                   </div>
                 </div>
 
-                <div style={{ marginBottom: '24px' }}>
-                  <label style={{ display: 'block', marginBottom: '12px', fontSize: '14px', fontWeight: '500' }}>
-                    Betalmetoder
-                  </label>
-                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                    <label className="checkbox-label">
-                      <input
-                        type="checkbox"
-                        checked={kassaData.betalmetoder.kort}
-                        onChange={(e) => setKassaData({
-                          ...kassaData,
-                          betalmetoder: { ...kassaData.betalmetoder, kort: e.target.checked }
-                        })}
-                      />
-                      Kort
-                    </label>
-                    <label className="checkbox-label">
-                      <input
-                        type="checkbox"
-                        checked={kassaData.betalmetoder.swish}
-                        onChange={(e) => setKassaData({
-                          ...kassaData,
-                          betalmetoder: { ...kassaData.betalmetoder, swish: e.target.checked }
-                        })}
-                      />
-                      Swish
-                    </label>
-                    <label className="checkbox-label">
-                      <input
-                        type="checkbox"
-                        checked={kassaData.betalmetoder.kontant}
-                        onChange={(e) => setKassaData({
-                          ...kassaData,
-                          betalmetoder: { ...kassaData.betalmetoder, kontant: e.target.checked }
-                        })}
-                      />
-                      Kontant
-                    </label>
-                  </div>
-                </div>
-
-                <h3 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '16px', color: '#06b6d4' }}>
-                  Kassaplatser
-                </h3>
-
-                {kassaData.kassaplatser.map((kassa, index) => (
+                {korjournalData.fordon.map((f, index) => (
                   <div key={index} className="repeatable-item">
-                    {kassaData.kassaplatser.length > 1 && (
+                    {korjournalData.fordon.length > 1 && (
                       <button
                         className="btn btn-secondary"
                         style={{ position: 'absolute', top: '12px', right: '12px' }}
-                        onClick={() => removeItem(setKassaData, kassaData, 'kassaplatser', index)}
+                        onClick={() => removeItem(setKorjournalData, korjournalData, 'fordon', index)}
                         title="Ta bort"
                       >
                         ×
                       </button>
                     )}
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                      <div>
-                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
-                          Plats/Namn
-                        </label>
-                        <input
-                          className="input-field"
-                          value={kassa.platsNamn}
-                          onChange={(e) => updateItem(setKassaData, kassaData, 'kassaplatser', index, 'platsNamn', e.target.value)}
-                          placeholder="Kassa 1"
-                        />
-                      </div>
-
-                      <div>
-                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
-                          Hårdvara
-                        </label>
-                        <input
-                          className="input-field"
-                          value={kassa.hardvara}
-                          onChange={(e) => updateItem(setKassaData, kassaData, 'kassaplatser', index, 'hardvara', e.target.value)}
-                          placeholder="iPad, Terminal, PC"
-                        />
-                      </div>
-
-                      <div>
-                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
-                          Kvittoskrivare
-                        </label>
-                        <input
-                          className="input-field"
-                          value={kassa.skrivare}
-                          onChange={(e) => updateItem(setKassaData, kassaData, 'kassaplatser', index, 'skrivare', e.target.value)}
-                          placeholder="Ja/Nej, modell"
-                        />
-                      </div>
-
-                      <div>
-                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
-                          Kortläsare
-                        </label>
-                        <input
-                          className="input-field"
-                          value={kassa.kortlasare}
-                          onChange={(e) => updateItem(setKassaData, kassaData, 'kassaplatser', index, 'kortlasare', e.target.value)}
-                          placeholder="Ja/Nej, modell"
-                        />
-                      </div>
-
-                      <div>
-                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
-                          Streckkodsläsare
-                        </label>
-                        <input
-                          className="input-field"
-                          value={kassa.streckkod}
-                          onChange={(e) => updateItem(setKassaData, kassaData, 'kassaplatser', index, 'streckkod', e.target.value)}
-                          placeholder="Ja/Nej"
-                        />
-                      </div>
-                    </div>
+                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
+                      Regnr {index + 1}
+                    </label>
+                    <input
+                      className="input-field"
+                      value={f.regnr}
+                      onChange={(e) => updateItem(setKorjournalData, korjournalData, 'fordon', index, 'regnr', e.target.value)}
+                      placeholder="ABC123"
+                    />
                   </div>
                 ))}
-              </div>
-            )}
 
-            {/* KÖRJOURNAL */}
-            {services.korjournal && (
-              <div className="form-section">
-                <h2 style={{
-                  fontSize: '20px',
-                  fontWeight: '600',
-                  marginBottom: '24px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '12px'
-                }}>
-                  <span style={{ fontSize: '24px' }}>🚗</span>
-                  Körjournal
-                </h2>
-
-                <div style={{ marginBottom: '24px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                    <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#06b6d4', margin: 0 }}>Fordon</h3>
-                    <button
-                      className="btn btn-add"
-                      onClick={() => addItem(
-                        setKorjournalData,
-                        korjournalData,
-                        'fordon',
-                        { regnr: '', marke: '', modell: '', milersattning: '' }
-                      )}
-                    >
-                      + Lägg till fordon
-                    </button>
-                  </div>
-
-                  {korjournalData.fordon.map((fordon, index) => (
-                    <div key={index} className="repeatable-item">
-                      {korjournalData.fordon.length > 1 && (
-                        <button
-                          className="btn btn-secondary"
-                          style={{ position: 'absolute', top: '12px', right: '12px' }}
-                          onClick={() => removeItem(setKorjournalData, korjournalData, 'fordon', index)}
-                          title="Ta bort"
-                        >
-                          ×
-                        </button>
-                      )}
-
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '16px' }}>
-                        <div>
-                          <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
-                            Registreringsnummer
-                          </label>
-                          <input
-                            className="input-field"
-                            value={fordon.regnr}
-                            onChange={(e) => updateItem(setKorjournalData, korjournalData, 'fordon', index, 'regnr', e.target.value)}
-                            placeholder="ABC123"
-                          />
-                        </div>
-
-                        <div>
-                          <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
-                            Märke
-                          </label>
-                          <input
-                            className="input-field"
-                            value={fordon.marke}
-                            onChange={(e) => updateItem(setKorjournalData, korjournalData, 'fordon', index, 'marke', e.target.value)}
-                            placeholder="Volvo"
-                          />
-                        </div>
-
-                        <div>
-                          <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
-                            Modell
-                          </label>
-                          <input
-                            className="input-field"
-                            value={fordon.modell}
-                            onChange={(e) => updateItem(setKorjournalData, korjournalData, 'fordon', index, 'modell', e.target.value)}
-                            placeholder="V90"
-                          />
-                        </div>
-
-                        <div>
-                          <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
-                            Milersättning (kr)
-                          </label>
-                          <input
-                            className="input-field"
-                            value={fordon.milersattning}
-                            onChange={(e) => updateItem(setKorjournalData, korjournalData, 'fordon', index, 'milersattning', e.target.value)}
-                            placeholder="18.50"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                    <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#06b6d4', margin: 0 }}>Förare</h3>
-                    <button
-                      className="btn btn-add"
-                      onClick={() => addItem(
-                        setKorjournalData,
-                        korjournalData,
-                        'forare',
-                        { namn: '', personnummer: '', korkort: '', mobil: '' }
-                      )}
-                    >
-                      + Lägg till förare
-                    </button>
-                  </div>
-
-                  {korjournalData.forare.map((forare, index) => (
-                    <div key={index} className="repeatable-item">
-                      {korjournalData.forare.length > 1 && (
-                        <button
-                          className="btn btn-secondary"
-                          style={{ position: 'absolute', top: '12px', right: '12px' }}
-                          onClick={() => removeItem(setKorjournalData, korjournalData, 'forare', index)}
-                          title="Ta bort"
-                        >
-                          ×
-                        </button>
-                      )}
-
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '16px' }}>
-                        <div>
-                          <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
-                            Namn
-                          </label>
-                          <input
-                            className="input-field"
-                            value={forare.namn}
-                            onChange={(e) => updateItem(setKorjournalData, korjournalData, 'forare', index, 'namn', e.target.value)}
-                            placeholder="Anna Andersson"
-                          />
-                        </div>
-
-                        <div>
-                          <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
-                            Personnummer
-                          </label>
-                          <input
-                            className="input-field"
-                            value={forare.personnummer}
-                            onChange={(e) => updateItem(setKorjournalData, korjournalData, 'forare', index, 'personnummer', e.target.value)}
-                            placeholder="YYYYMMDD-XXXX"
-                          />
-                        </div>
-
-                        <div>
-                          <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
-                            Körkortsnummer
-                          </label>
-                          <input
-                            className="input-field"
-                            value={forare.korkort}
-                            onChange={(e) => updateItem(setKorjournalData, korjournalData, 'forare', index, 'korkort', e.target.value)}
-                            placeholder="XXXXXXXXXX"
-                          />
-                        </div>
-
-                        <div>
-                          <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
-                            Mobilnummer
-                          </label>
-                          <input
-                            className="input-field"
-                            value={forare.mobil}
-                            onChange={(e) => updateItem(setKorjournalData, korjournalData, 'forare', index, 'mobil', e.target.value)}
-                            placeholder="070-XXX XX XX"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                <div style={{ marginTop: '10px' }}>
+                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
+                    Övrigt (körjournal)
+                  </label>
+                  <textarea
+                    className="input-field"
+                    value={korjournalData.ovrigt}
+                    onChange={(e) => setKorjournalData({ ...korjournalData, ovrigt: e.target.value })}
+                    placeholder="Ex: förare, policy, behov, integration, etc."
+                  />
                 </div>
               </div>
             )}
@@ -1779,11 +990,11 @@ function SalesOrderApp() {
               position: 'sticky',
               bottom: '24px',
               background: 'rgba(15, 23, 42, 0.95)',
-              border: '2px solid rgba(6, 182, 212, 0.3)',
+              border: '2px solid rgba(85, 199, 219, 0.3)',
               borderRadius: '16px',
               padding: '24px',
               backdropFilter: 'blur(20px)',
-              boxShadow: '0 -4px 24px rgba(0, 0, 0, 0.3), 0 0 40px rgba(6, 182, 212, 0.2)'
+              boxShadow: '0 -4px 24px rgba(0, 0, 0, 0.3), 0 0 40px rgba(85, 199, 219, 0.2)'
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
@@ -1791,7 +1002,7 @@ function SalesOrderApp() {
                     Redo att skicka order?
                   </div>
                   <div style={{ fontSize: '14px', color: '#94a3b8' }}>
-                    Mejl skickas till abbe@easypartner.se
+                    Mejl skickas till abbe@easypartner.se (+ Trello CC)
                   </div>
                 </div>
 
@@ -1822,19 +1033,6 @@ function SalesOrderApp() {
               )}
             </div>
           </>
-        )}
-
-        {!anyServiceSelected && (
-          <div style={{
-            textAlign: 'center',
-            padding: '80px 24px',
-            color: '#94a3b8'
-          }}>
-            <div style={{ fontSize: '48px', marginBottom: '16px' }}>👆</div>
-            <div style={{ fontSize: '18px', fontWeight: '500' }}>
-              Välj minst en tjänst för att komma igång
-            </div>
-          </div>
         )}
       </div>
     </div>
