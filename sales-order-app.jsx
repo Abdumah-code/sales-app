@@ -971,7 +971,7 @@ function SalesOrderApp() {
                     1. Slutfaktura (hårdvara & abonnemang)
                   </label>
                   <div style={{ color: '#94a3b8', fontSize: '13px', marginBottom: '6px' }}>
-                    Ex: "Slutlösen 17187 kr efter 6 mån, hårdvara ligger hos Helin Shekhan Telenor privat..."
+                    Ex: "Slutlösen 17187 kr efter 6 mån, hårdvara ligger hos Test Testsson Telenor privat..."
                   </div>
                   <textarea
                     className="input-field"
@@ -987,7 +987,7 @@ function SalesOrderApp() {
                     2. Fullmakt (vilka behöver vi fullmakt från?)
                   </label>
                   <div style={{ color: '#94a3b8', fontSize: '13px', marginBottom: '6px' }}>
-                    Ex: "1. Telenor privat - Helin Shekhan, 2. Telenor företag - Lana Shekhan..."
+                    Ex: "1. Telenor privat - Helin Shekhan, 2. Telenor företag - Test Testsson..."
                   </div>
                   <textarea
                     className="input-field"
