@@ -92,6 +92,117 @@ function SalesOrderApp() {
     return `${yy}-${mm}-${dd}`;
   };
 
+  // NEW FUNCTION - Check if drift date is too soon
+  const isDriftTooSoon = (yyyyMmDd) => {
+    if (!yyyyMmDd) return false;
+    const driftDate = new Date(yyyyMmDd);
+    const today = new Date();
+    const twoMonthsFromNow = new Date();
+    twoMonthsFromNow.setMonth(twoMonthsFromNow.getMonth() + 2);
+    
+    return driftDate < twoMonthsFromNow;
+  };
+
+  // NEW FUNCTION - Get days until drift
+  const getDaysUntilDrift = (yyyyMmDd) => {
+    if (!yyyyMmDd) return null;
+    const driftDate = new Date(yyyyMmDd);
+    const today = new Date();
+    const diffTime = driftDate - today;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays;
+  };
+
+  const getSmartDueDate = (yyyyMmDd) => {
+  if (!yyyyMmDd) return '';
+  
+  const driftDate = new Date(yyyyMmDd);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0); // Reset time for accurate comparison
+  
+  // Calculate ideal start date (2 months before)
+  const idealStartDate = new Date(driftDate);
+  idealStartDate.setMonth(idealStartDate.getMonth() - 2);
+  idealStartDate.setHours(0, 0, 0, 0);
+  
+ // If ideal start date is in the past, set due date to 2 days from now (triggers "due soon")
+  if (idealStartDate <= today) {
+    const twoDaysFromNow = new Date(today);
+    twoDaysFromNow.setDate(twoDaysFromNow.getDate() + 2);
+    const yy = twoDaysFromNow.getFullYear();
+    const mm = String(twoDaysFromNow.getMonth() + 1).padStart(2, '0');
+    const dd = String(twoDaysFromNow.getDate()).padStart(2, '0');
+    return `${yy}-${mm}-${dd}`;
+  }
+  
+  // Otherwise use the ideal start date
+  const yy = idealStartDate.getFullYear();
+  const mm = String(idealStartDate.getMonth() + 1).padStart(2, '0');
+  const dd = String(idealStartDate.getDate()).padStart(2, '0');
+  return `${yy}-${mm}-${dd}`;
+};
+
+  const getSmartDueDateWithTime = (yyyyMmDd) => {
+    const dateStr = getSmartDueDate(yyyyMmDd);
+    if (!dateStr) return '';
+    
+    // Add time (9 AM) for better Trello processing
+    return `${dateStr} 09:00`;
+  };
+
+  const generateICSFile = (foretag, serviceLabel, driftDate, startDate) => {
+  const now = new Date();
+  const formatICSDate = (date) => {
+    const d = new Date(date);
+    return d.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+  };
+  
+  // Set reminder for 9 AM on the start date
+  const reminderDate = new Date(startDate || now);
+  reminderDate.setHours(9, 0, 0, 0);
+  
+  const icsContent = `BEGIN:VCALENDAR
+    VERSION:2.0
+    PRODID:-//EasyPartner//Order System//EN
+    CALSCALE:GREGORIAN
+    METHOD:PUBLISH
+    BEGIN:VEVENT
+    DTSTART:${formatICSDate(reminderDate)}
+    DTEND:${formatICSDate(new Date(reminderDate.getTime() + 60*60*1000))}
+    DTSTAMP:${formatICSDate(now)}
+    SUMMARY:🚨 STARTA ORDER: ${foretag} - ${serviceLabel}
+    DESCRIPTION:AKUT ORDER!\\n\\nKund: ${foretag}\\nTjänst: ${serviceLabel}\\nDriftsättning: ${driftDate}\\n\\nBörja arbeta med denna order OMEDELBART!
+    LOCATION:EasyPartner
+    STATUS:CONFIRMED
+    PRIORITY:1
+    BEGIN:VALARM
+    TRIGGER:-PT0M
+    ACTION:DISPLAY
+    DESCRIPTION:Starta arbete med ${foretag}
+    END:VALARM
+    BEGIN:VALARM
+    TRIGGER:-PT1H
+    ACTION:DISPLAY
+    DESCRIPTION:Om 1 timme: Starta ${foretag}
+    END:VALARM
+    END:VEVENT
+    END:VCALENDAR`;
+
+    return icsContent;
+  };
+
+  const downloadICSFile = (foretag, serviceLabel, driftDate, startDate) => {
+    const icsContent = generateICSFile(foretag, serviceLabel, driftDate, startDate);
+    const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `URGENT-${foretag.replace(/[^a-z0-9]/gi, '-')}.ics`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(link.href);
+  };
+
   const validateForm = () => {
     const newErrors = {};
 
@@ -129,6 +240,8 @@ function SalesOrderApp() {
   const generateEmailBody = () => {
     const serviceLabel = formatServiceLabel(selectedService);
     const startDatum = minusTwoMonths(trelloMeta.driftStart);
+    const smartDueDate = getSmartDueDate(trelloMeta.driftStart);
+    body += `📅 Trello Due Date: ${smartDueDate}\n`;
 
     let body = '';
     body += `📌 PRIO\n_\n\n`;
@@ -138,6 +251,14 @@ function SalesOrderApp() {
     body += `🧾 Övrigt\n_\n\n`;
     body += `🗓 Driftsättning\n${trelloMeta.driftStart || '_'}\n`;
     body += `⏳ Starta (2 mån innan)\n${startDatum || '_'}\n\n`;
+
+    if (isDriftTooSoon(trelloMeta.driftStart)) {
+      const daysLeft = getDaysUntilDrift(trelloMeta.driftStart);
+      body += `\n🚨 VARNING: AKUT ORDER - Drift om ${daysLeft} dagar!\n`;
+      body += `Startdatum ligger i det förflutna. Börja arbeta OMEDELBART!\n`;
+    }
+
+    body += `\n#due ${getSmartDueDateWithTime(trelloMeta.driftStart)}\n\n`;
 
     body += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
     body += `NY ORDER - ${baseInfo.foretag}\n`;
@@ -216,10 +337,18 @@ function SalesOrderApp() {
     }
 
     const serviceLabel = formatServiceLabel(selectedService);
-    const subject = `Ny order - ${baseInfo.foretag} - ${serviceLabel}`;
+    const isUrgent = isDriftTooSoon(trelloMeta.driftStart);
+    const daysLeft = getDaysUntilDrift(trelloMeta.driftStart);
+    
+    // Create subject with urgency marker
+    let subject;
+    if (isUrgent && daysLeft <= 30) {
+      subject = `🚨 AKUT (${daysLeft} dagar!) - ${baseInfo.foretag} - ${serviceLabel}`;
+    } else {
+      subject = `Ny order - ${baseInfo.foretag} - ${serviceLabel}`;
+    }
 
     const body = generateEmailBody();
-
     const trelloEmail = saljareTrelloEmails[saljare];
     const mailtoLink =
       `mailto:abbe@easypartner.se` +
@@ -268,11 +397,11 @@ function SalesOrderApp() {
     // Service selected
     if (selectedService) filled++;
 
-    // Service min
+   // Service min
     if (selectedService === 'telefoni') {
       total += 2;
-      if (telefoniData.nuvarandeOperator) filled++;
-      if (telefoniData.nastaOperator) filled++;
+      if (telefoniData[0]?.nuvarandeOperator) filled++;
+      if (telefoniData[0]?.nastaOperator) filled++;
     }
 
     return Math.round((filled / total) * 100);
@@ -334,6 +463,11 @@ function SalesOrderApp() {
         @keyframes slideIn {
           from { opacity: 0; transform: translateY(20px); }
           to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.7; }
         }
 
         .input-field {
@@ -416,8 +550,6 @@ function SalesOrderApp() {
           position: relative;
         }
         .error-text { color: #fca5a5; font-size: 13px; margin-top: 4px; }
-        textarea.input-field { min-height: 110px; resize: vertical; }
-
         textarea.input-field { min-height: 110px; resize: vertical; }
 
         /* Calendar icon color - brand blue */
@@ -546,14 +678,49 @@ function SalesOrderApp() {
               type="date"
               className={`input-field ${errors.driftStart ? 'error' : ''}`}
               value={trelloMeta.driftStart}
+              min={new Date().toISOString().split('T')[0]}
               onChange={(e) => setTrelloMeta({ ...trelloMeta, driftStart: e.target.value })}
             />
             {errors.driftStart && <div className="error-text">{errors.driftStart}</div>}
             {trelloMeta.driftStart && (
+            <>
               <div style={{ marginTop: '8px', fontSize: '13px', color: '#94a3b8' }}>
-                Starta 2 månader innan: <span style={{ color: '#86efac' }}>{minusTwoMonths(trelloMeta.driftStart)}</span>
+                Ideal start: <span style={{ color: '#86efac' }}>{minusTwoMonths(trelloMeta.driftStart)}</span>
+              </div>
+              
+             {isDriftTooSoon(trelloMeta.driftStart) && (
+              <div style={{
+                marginTop: '12px',
+                padding: '12px 16px',
+                background: 'rgba(239, 68, 68, 0.15)',
+                border: '2px solid #ef4444',
+                borderRadius: '8px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                animation: 'pulse 2s infinite'
+              }}>
+                <span style={{ fontSize: '20px' }}>⚠️</span>
+                <div>
+                  <div style={{ fontWeight: '600', color: '#fca5a5', marginBottom: '4px' }}>
+                    VARNING: Kort tid till drift!
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#fca5a5' }}>
+                    Driftsättning är om {getDaysUntilDrift(trelloMeta.driftStart)} dagar.
+                    <br />
+                    Idealisk starttid har passerats. Fortsätt ändå om kunden godkänt detta.
+                  </div>
+                </div>
               </div>
             )}
+              
+              {!isDriftTooSoon(trelloMeta.driftStart) && (
+                <div style={{ marginTop: '8px', fontSize: '13px', color: '#86efac' }}>
+                  ✅ Trello due date kommer att sättas till: {getSmartDueDate(trelloMeta.driftStart)}
+                </div>
+              )}
+            </>
+          )}
           </div>
         </div>
 
@@ -1122,61 +1289,30 @@ function SalesOrderApp() {
             )}
 
             {/* Send Button */}
-            <div style={{
-              position: 'sticky',
-              bottom: '24px',
-              background: 'rgba(15, 23, 42, 0.95)',
-              border: '2px solid rgba(85, 199, 219, 0.3)',
-              borderRadius: '16px',
-              padding: '24px',
-              backdropFilter: 'blur(20px)',
-              boxShadow: '0 -4px 24px rgba(0, 0, 0, 0.3), 0 0 40px rgba(85, 199, 219, 0.2)'
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-               <div>
-                <div style={{ fontSize: '18px', fontWeight: '600', marginBottom: '4px' }}>
-                  Redo att skicka order?
-                </div>
-                <div style={{ fontSize: '14px', color: '#94a3b8', marginBottom: '4px' }}>
-                  Mejl skickas till abbe@easypartner.se (+ Trello CC)
-                </div>
-                <div style={{ 
-                  fontSize: '13px', 
-                  color: '#fbbf24',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px'
-                }}>
-                  ⚠️ Kom ihåg: Ta bort din email-signatur innan du skickar!
-                </div>
-              </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+  <div>
+    <div style={{ fontSize: '18px', fontWeight: '600', marginBottom: '4px' }}>
+      Redo att skicka order?
+    </div>
+    <div style={{ 
+      fontSize: '13px', 
+      color: '#fbbf24',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '6px'
+    }}>
+      ⚠️ Kom ihåg: Ta bort din email-signatur innan du skickar!
+    </div>
+  </div>
 
-                <button
-                  className="btn btn-primary"
-                  onClick={handleSendOrder}
-                  style={{ fontSize: '16px', padding: '16px 32px' }}
-                >
-                  📨 Skicka till leverans
-                </button>
-              </div>
-
-              {Object.keys(errors).length > 0 && (
-                <div style={{
-                  marginTop: '16px',
-                  padding: '12px 16px',
-                  background: 'rgba(239, 68, 68, 0.1)',
-                  border: '1px solid rgba(239, 68, 68, 0.3)',
-                  borderRadius: '8px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  color: '#fca5a5'
-                }}>
-                  <span>⚠️</span>
-                  <span>Vänligen fyll i alla obligatoriska fält innan du skickar</span>
-                </div>
-              )}
-            </div>
+  <button
+    className="btn btn-primary"
+    onClick={handleSendOrder}
+    style={{ fontSize: '16px', padding: '16px 32px' }}
+  >
+    📨 Skicka till leverans
+  </button>
+</div>
           </>
         )}
       </div>
