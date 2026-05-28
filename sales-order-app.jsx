@@ -49,6 +49,7 @@ function SalesOrderApp() {
   ]);
 
   const [errors, setErrors] = useState({});
+  const [signatureConfirmed, setSignatureConfirmed] = useState(false);
 
   // ─── CONSTANTS ──────────────────────────────────────────
   const saljareTrelloEmails = {
@@ -89,6 +90,7 @@ function SalesOrderApp() {
     setKassaData([{ nuvarandeLeverantor: '', nastaLeverantor: '', antalKassor: '', kassaTyp: '', ovrigt: '' }]);
     setOfficeLicenserData([{ nuvarandeLeverantor: '', nastaLeverantor: '', antalLicenser: '', licensTyp: '', ovrigt: '' }]);
     setErrors({});
+    setSignatureConfirmed(false);
     setSubmitted(false);
     setLastOrderName('');
   };
@@ -1190,23 +1192,42 @@ function SalesOrderApp() {
             )}
 
             {/* ── Send Button */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <label style={{
+              display: 'flex', alignItems: 'center', gap: '12px',
+              padding: '16px 20px',
+              background: 'rgba(251, 191, 36, 0.08)',
+              border: '2px solid rgba(251, 191, 36, 0.3)',
+              borderRadius: '10px',
+              cursor: 'pointer'
+            }}>
+              <input
+                type="checkbox"
+                checked={signatureConfirmed}
+                onChange={(e) => setSignatureConfirmed(e.target.checked)}
+                style={{ width: '20px', height: '20px', cursor: 'pointer', accentColor: '#55c7db' }}
+              />
+              <span style={{ fontSize: '14px', fontWeight: '600', color: '#fbbf24' }}>
+                ⚠️ Jag bekräftar att jag kommer ta bort min e-signatur innan jag skickar mejlet till leverans.
+              </span>
+            </label>
+
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <div style={{ fontSize: '18px', fontWeight: '600', marginBottom: '4px' }}>
-                  Redo att skicka order?
-                </div>
-                <div style={{ fontSize: '13px', color: '#fbbf24', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  ⚠️ Ta bort din e-signatur i mejlet innan du skickar!
-                </div>
-              </div>
+              <div style={{ fontSize: '18px', fontWeight: '600' }}>Redo att skicka order?</div>
               <button
                 className="btn btn-primary"
                 onClick={handleSendOrder}
-                style={{ fontSize: '16px', padding: '16px 32px' }}
+                disabled={!signatureConfirmed}
+                style={{
+                  fontSize: '16px', padding: '16px 32px',
+                  opacity: signatureConfirmed ? 1 : 0.4,
+                  cursor: signatureConfirmed ? 'pointer' : 'not-allowed'
+                }}
               >
                 📨 Skicka till leverans
               </button>
             </div>
+          </div>
           </>
         )}
       </div>
